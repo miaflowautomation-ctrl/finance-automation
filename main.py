@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 import io
 import csv
 from datetime import datetime
@@ -618,4 +617,5 @@ with col2:
     if st.session_state.script_executed:
         st.success("✅ Ready")
     else:
+
         st.info("⏳ Waiting")
