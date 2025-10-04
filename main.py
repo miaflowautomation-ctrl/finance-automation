@@ -10,67 +10,42 @@ import sys
 
 # Page configuration
 st.set_page_config(
-    page_title="Finance Automation Platform",
-    page_icon="💰",
+    page_title="Finance Automation",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # Custom CSS styling
 st.markdown("""
 <style>
+    /* Hide Streamlit branding and icons */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
     .main-header {
-        font-size: 32px;
-        font-weight: bold;
+        font-size: 96px;
+        font-weight: 900;
         color: #1f2937;
-        margin-bottom: 10px;
-    }
-    .subtitle {
-        font-size: 16px;
-        color: #6b7280;
         margin-bottom: 30px;
+        letter-spacing: -1.5px;
     }
-    .metric-card {
-        background: white;
-        padding: 20px;
+    
+    /* Grey background for left panel */
+    [data-testid="column"]:first-child {
+        background-color: #f3f4f6;
+        padding: 25px;
         border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        text-align: center;
     }
-    .metric-value {
-        font-size: 32px;
-        font-weight: bold;
+    
+    .section-header {
+        font-size: 18px;
+        font-weight: 600;
         color: #1f2937;
+        margin-bottom: 15px;
+        margin-top: 20px;
     }
-    .metric-label {
-        font-size: 12px;
-        color: #6b7280;
-        margin-top: 5px;
-    }
-    .success-msg {
-        color: #10b981;
-        font-family: monospace;
-        font-size: 12px;
-        padding: 2px 0;
-    }
-    .error-msg {
-        color: #dc2626;
-        font-family: monospace;
-        font-size: 12px;
-        padding: 2px 0;
-    }
-    .info-msg {
-        color: #3b82f6;
-        font-family: monospace;
-        font-size: 12px;
-        padding: 2px 0;
-    }
-    .warning-msg {
-        color: #f59e0b;
-        font-family: monospace;
-        font-size: 12px;
-        padding: 2px 0;
-    }
+    
     .console-box {
         background: #1e1e1e;
         color: #d4d4d4;
@@ -78,10 +53,11 @@ st.markdown("""
         border-radius: 8px;
         font-family: 'Courier New', monospace;
         font-size: 12px;
-        max-height: 350px;
+        max-height: 400px;
         overflow-y: auto;
         line-height: 1.6;
     }
+    
     .error-console-box {
         background: #2d1818;
         color: #ff6b6b;
@@ -89,21 +65,50 @@ st.markdown("""
         border-radius: 8px;
         font-family: 'Courier New', monospace;
         font-size: 11px;
-        max-height: 300px;
+        max-height: 400px;
         overflow-y: auto;
         border: 1px solid #ff4444;
         line-height: 1.5;
     }
+    
     .stDownloadButton button {
         background-color: #10b981;
         color: white;
     }
-    .upload-section {
-        border: 2px dashed #d1d5db;
-        border-radius: 8px;
-        padding: 20px;
-        text-align: center;
-        background: #f9fafb;
+    
+    /* Tab styling to match Upload Document size */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 2px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        font-size: 18px;
+        font-weight: 600;
+        padding: 12px 24px;
+    }
+    
+    /* Hide file uploader drag and drop text */
+    [data-testid="stFileUploader"] section div {
+        display: none;
+    }
+    
+    [data-testid="stFileUploader"] section {
+        padding: 0;
+    }
+    
+    /* Remove extra padding from file uploader */
+    .uploadedFile {
+        margin-top: 10px;
+    }
+    
+    /* Center empty state */
+    .empty-state {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 400px;
+        color: #6b7280;
+        font-size: 16px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -111,8 +116,8 @@ st.markdown("""
 # Initialize session state
 if 'processed_data' not in st.session_state:
     st.session_state.processed_data = None
-if 'uploaded_file_name' not in st.session_state:
-    st.session_state.uploaded_file_name = None
+if 'uploaded_files' not in st.session_state:
+    st.session_state.uploaded_files = []
 if 'console_logs' not in st.session_state:
     st.session_state.console_logs = []
 if 'error_logs' not in st.session_state:
@@ -121,19 +126,23 @@ if 'original_data' not in st.session_state:
     st.session_state.original_data = None
 if 'script_executed' not in st.session_state:
     st.session_state.script_executed = False
+if 'combined_data' not in st.session_state:
+    st.session_state.combined_data = None
+if 'file_uploader_key' not in st.session_state:
+    st.session_state.file_uploader_key = 0
 
 def log_to_console(message, msg_type='info'):
     """Add messages to console log"""
     timestamp = datetime.now().strftime("%H:%M:%S")
-    icon = {'info': '📝', 'success': '✅', 'error': '❌', 'warning': '⚠️'}.get(msg_type, 'ℹ️')
-    st.session_state.console_logs.append(f"[{timestamp}] {icon} {message}")
+    icon = {'info': 'INFO', 'success': 'SUCCESS', 'error': 'ERROR', 'warning': 'WARNING'}.get(msg_type, 'INFO')
+    st.session_state.console_logs.append(f"[{timestamp}] [{icon}] {message}")
     if len(st.session_state.console_logs) > 100:
         st.session_state.console_logs = st.session_state.console_logs[-100:]
 
 def log_error(error_msg, traceback_str=None):
     """Add error to error console"""
     timestamp = datetime.now().strftime("%H:%M:%S")
-    error_entry = f"[{timestamp}] ❌ ERROR: {error_msg}"
+    error_entry = f"[{timestamp}] ERROR: {error_msg}"
     if traceback_str:
         error_entry += f"\n\nTraceback:\n{traceback_str}"
     st.session_state.error_logs.append(error_entry)
@@ -147,10 +156,10 @@ def process_uploaded_file(uploaded_file):
         
         if uploaded_file.name.endswith('.csv'):
             df = pd.read_csv(uploaded_file)
-            log_to_console(f"✓ CSV file loaded successfully", 'success')
+            log_to_console(f"CSV file loaded successfully", 'success')
         elif uploaded_file.name.endswith(('.xlsx', '.xls')):
             df = pd.read_excel(uploaded_file)
-            log_to_console(f"✓ Excel file loaded successfully", 'success')
+            log_to_console(f"Excel file loaded successfully", 'success')
         else:
             log_to_console(f"Unsupported file type: {uploaded_file.name}", 'error')
             log_error(f"Unsupported file type: {uploaded_file.name}")
@@ -165,11 +174,41 @@ def process_uploaded_file(uploaded_file):
         log_error(error_msg, traceback.format_exc())
         return None
 
+def combine_uploaded_files(uploaded_files):
+    """Combine multiple uploaded files into one dataframe"""
+    try:
+        if not uploaded_files:
+            return None
+        
+        all_dfs = []
+        for uploaded_file in uploaded_files:
+            df = process_uploaded_file(uploaded_file)
+            if df is not None:
+                all_dfs.append(df)
+        
+        if not all_dfs:
+            return None
+        
+        if len(all_dfs) == 1:
+            combined_df = all_dfs[0]
+        else:
+            # Concatenate all dataframes
+            combined_df = pd.concat(all_dfs, ignore_index=True)
+            log_to_console(f"Combined {len(all_dfs)} files into one dataset", 'success')
+        
+        log_to_console(f"Total rows: {len(combined_df)}, Total columns: {len(combined_df.columns)}", 'info')
+        return combined_df
+    except Exception as e:
+        error_msg = f"Error combining files: {str(e)}"
+        log_to_console(error_msg, 'error')
+        log_error(error_msg, traceback.format_exc())
+        return None
+
 def execute_python_script(df, script):
     """Execute Python script on dataframe with enhanced library support"""
     try:
         log_to_console("=" * 50, 'info')
-        log_to_console("🚀 Starting script execution...", 'info')
+        log_to_console("Starting script execution...", 'info')
         log_to_console("=" * 50, 'info')
         
         # Convert DataFrame to CSV string for script processing
@@ -194,16 +233,16 @@ def execute_python_script(df, script):
             import matplotlib.pyplot as plt
             exec_globals['plt'] = plt
             exec_globals['matplotlib'] = matplotlib
-            log_to_console("✓ Matplotlib loaded", 'info')
+            log_to_console("Matplotlib loaded", 'info')
         except ImportError:
-            log_to_console("⚠️ Matplotlib not available", 'warning')
+            log_to_console("Matplotlib not available", 'warning')
         
         try:
             import seaborn as sns
             exec_globals['sns'] = sns
-            log_to_console("✓ Seaborn loaded", 'info')
+            log_to_console("Seaborn loaded", 'info')
         except ImportError:
-            log_to_console("⚠️ Seaborn not available", 'warning')
+            log_to_console("Seaborn not available", 'warning')
         
         try:
             from sklearn import preprocessing, model_selection, metrics
@@ -211,45 +250,45 @@ def execute_python_script(df, script):
             exec_globals['preprocessing'] = preprocessing
             exec_globals['model_selection'] = model_selection
             exec_globals['metrics'] = metrics
-            log_to_console("✓ Scikit-learn loaded", 'info')
+            log_to_console("Scikit-learn loaded", 'info')
         except ImportError:
-            log_to_console("⚠️ Scikit-learn not available", 'warning')
+            log_to_console("Scikit-learn not available", 'warning')
         
         log_to_console("Executing user script...", 'info')
         
         # Execute the script
         exec(script, exec_globals)
         
-        log_to_console("✓ Script executed without errors", 'success')
+        log_to_console("Script executed without errors", 'success')
         
         # Get output_csv or output_df from executed script
         if 'output_csv' in exec_globals:
             output_csv = exec_globals['output_csv']
             result_df = pd.read_csv(io.StringIO(output_csv))
-            log_to_console("✓ Output retrieved via 'output_csv'", 'success')
+            log_to_console("Output retrieved via 'output_csv'", 'success')
             log_to_console(f"Output: {len(result_df)} rows, {len(result_df.columns)} columns", 'success')
             log_to_console("=" * 50, 'success')
-            log_to_console("✅ EXECUTION COMPLETED SUCCESSFULLY", 'success')
+            log_to_console("EXECUTION COMPLETED SUCCESSFULLY", 'success')
             log_to_console("=" * 50, 'success')
             return result_df
         elif 'output_df' in exec_globals:
             result_df = exec_globals['output_df']
-            log_to_console("✓ Output retrieved via 'output_df'", 'success')
+            log_to_console("Output retrieved via 'output_df'", 'success')
             log_to_console(f"Output: {len(result_df)} rows, {len(result_df.columns)} columns", 'success')
             log_to_console("=" * 50, 'success')
-            log_to_console("✅ EXECUTION COMPLETED SUCCESSFULLY", 'success')
+            log_to_console("EXECUTION COMPLETED SUCCESSFULLY", 'success')
             log_to_console("=" * 50, 'success')
             return result_df
         else:
             error_msg = "Script must set 'output_csv' or 'output_df' variable"
-            log_to_console(f"❌ {error_msg}", 'error')
+            log_to_console(f"{error_msg}", 'error')
             log_error(error_msg)
             return None
             
     except Exception as e:
         error_msg = f"Script execution failed: {str(e)}"
         log_to_console("=" * 50, 'error')
-        log_to_console(f"❌ {error_msg}", 'error')
+        log_to_console(f"{error_msg}", 'error')
         log_to_console("=" * 50, 'error')
         log_error(error_msg, traceback.format_exc())
         return None
@@ -302,7 +341,7 @@ def create_dynamic_chart(df):
             ))
         
         fig.update_layout(
-            title=f'Data Visualization ({plot_limit} points)',
+            title=f'Output Data Visualization',
             xaxis_title=x_label,
             yaxis_title='Value',
             height=400,
@@ -316,154 +355,95 @@ def create_dynamic_chart(df):
         log_error(f"Error creating chart: {str(e)}", traceback.format_exc())
         return None
 
-def calculate_metrics(df):
-    """Calculate dynamic metrics from dataframe"""
-    if df is None or len(df) == 0:
-        return None
-    
-    try:
-        total_records = len(df)
-        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-        
-        if numeric_cols:
-            first_col = numeric_cols[0]
-            values = df[first_col].dropna()
-            
-            if len(values) > 0:
-                avg_value = values.mean()
-                max_value = values.max()
-                min_value = values.min()
-                std_value = values.std()
-                
-                return {
-                    'metric1': f"{avg_value:.2f}",
-                    'metric1_label': f'Avg {first_col}',
-                    'metric2': f"{max_value:.2f}",
-                    'metric2_label': f'Max {first_col}',
-                    'metric3': f"{min_value:.2f}",
-                    'metric3_label': f'Min {first_col}',
-                    'metric4': f"{total_records:,}",
-                    'metric4_label': 'Total Records'
-                }
-        
-        return {
-            'metric1': 'N/A',
-            'metric1_label': 'Average',
-            'metric2': 'N/A',
-            'metric2_label': 'Maximum',
-            'metric3': 'N/A',
-            'metric3_label': 'Minimum',
-            'metric4': f"{total_records:,}",
-            'metric4_label': 'Total Records'
-        }
-    except Exception as e:
-        log_error(f"Error calculating metrics: {str(e)}", traceback.format_exc())
-        return None
-
 # Main Layout
-st.markdown('<p class="main-header">💰 Finance Automation Platform</p>', unsafe_allow_html=True)
-st.markdown('<p class="subtitle">Upload CSV/Excel → Paste Python Script → Download Processed Output</p>', unsafe_allow_html=True)
+st.title("Finance Automation")
+st.markdown("<br>", unsafe_allow_html=True)
 
 # Create two columns
 left_col, right_col = st.columns([1, 2])
 
 with left_col:
     # Upload Section
-    st.markdown("### 📤 Step 1: Upload Document")
+    st.markdown('<p class="section-header">Upload Files</p>', unsafe_allow_html=True)
     
-    uploaded_file = st.file_uploader(
-        "Choose CSV or Excel file",
+    uploaded_files = st.file_uploader(
+        "Upload Files",
         type=['csv', 'xlsx', 'xls'],
-        help="Maximum file size: 200MB"
+        accept_multiple_files=True,
+        help="Maximum file size: 200MB per file",
+        label_visibility="collapsed",
+        key=f"file_uploader_{st.session_state.file_uploader_key}"
     )
     
-    if uploaded_file:
-        # Check if this is a new file
-        if st.session_state.uploaded_file_name != uploaded_file.name:
-            log_to_console(f"New file detected: {uploaded_file.name}", 'info')
-            df = process_uploaded_file(uploaded_file)
-            if df is not None:
-                st.session_state.original_data = df
-                st.session_state.uploaded_file_name = uploaded_file.name
-                st.session_state.processed_data = None
-                st.session_state.script_executed = False
-    
-    # Display uploaded file info
-    if st.session_state.uploaded_file_name:
-        st.success(f"✅ File loaded: **{st.session_state.uploaded_file_name}**")
+    if uploaded_files:
+        st.success(f"{len(uploaded_files)} file(s) uploaded")
+        for file in uploaded_files:
+            st.text(f"• {file.name}")
         
-        if st.session_state.original_data is not None:
+        # Process files
+        combined_df = combine_uploaded_files(uploaded_files)
+        if combined_df is not None:
+            st.session_state.combined_data = combined_df
+            st.session_state.uploaded_files = uploaded_files
+            
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("Rows", len(st.session_state.original_data))
+                st.metric("Total Rows", len(st.session_state.combined_data))
             with col2:
-                st.metric("Columns", len(st.session_state.original_data.columns))
+                st.metric("Total Columns", len(st.session_state.combined_data.columns))
         
-        if st.button("🗑️ Remove File & Reset", use_container_width=True):
-            st.session_state.uploaded_file_name = None
+        if st.button("Remove All Files", use_container_width=True):
+            # Reset all session state
+            st.session_state.uploaded_files = []
             st.session_state.processed_data = None
-            st.session_state.original_data = None
+            st.session_state.combined_data = None
             st.session_state.console_logs = []
             st.session_state.error_logs = []
             st.session_state.script_executed = False
-            log_to_console("Application reset", 'info')
+            # Increment key to force file uploader to reset
+            st.session_state.file_uploader_key += 1
+            log_to_console("All files removed and application reset", 'info')
             st.rerun()
     
     st.markdown("---")
     
     # Script Section
-    st.markdown("### 🐍 Step 2: Paste Python Script")
-    st.caption("Available libraries: pandas (pd), numpy (np), matplotlib (plt), seaborn (sns), sklearn")
-    
-    default_script = """# Example 1: Using CSV string (input_csv)
-import io, csv
-
-reader = csv.DictReader(io.StringIO(input_csv))
-rows = []
-for r in reader:
-    # Add your processing logic here
-    amt = float(r.get('amount', 0) or 0)
-    r['amount_plus_tax'] = f"{amt * 1.2:.2f}"
-    rows.append(r)
-
-headers = list(rows[0].keys()) if rows else []
-buf = io.StringIO()
-writer = csv.writer(buf)
-writer.writerow(headers)
-for r in rows:
-    writer.writerow([r.get(h, '') for h in headers])
-
-output_csv = buf.getvalue()
-
-# Example 2: Using DataFrame (input_df)
-# output_df = input_df.copy()
-# output_df['new_column'] = output_df['column_name'] * 2
-"""
+    st.markdown('<p class="section-header">Paste Python Script</p>', unsafe_allow_html=True)
+    st.caption("Available: pandas (pd), numpy (np), matplotlib (plt), seaborn (sns), sklearn")
     
     code_editor = st.text_area(
-        "Python Code Editor",
-        value=default_script,
-        height=320,
-        help="Your script must define 'output_csv' (string) or 'output_df' (DataFrame)"
+        "Python Script",
+        value="",
+        height=300,
+        placeholder="# Paste your Python script here\n# Available variables:\n#   - input_csv (string)\n#   - input_df (DataFrame)\n# Required output:\n#   - output_csv or output_df",
+        help="Your script must define 'output_csv' (string) or 'output_df' (DataFrame)",
+        label_visibility="collapsed"
     )
     
     col1, col2 = st.columns(2)
     with col1:
-        run_disabled = st.session_state.original_data is None
-        if st.button("🚀 Run Script", type="primary", use_container_width=True, disabled=run_disabled):
-            if st.session_state.original_data is not None:
-                st.session_state.console_logs = []  # Clear previous logs
+        run_disabled = st.session_state.combined_data is None or not code_editor.strip()
+        if st.button("Run Script", type="primary", use_container_width=True, disabled=run_disabled):
+            if st.session_state.combined_data is not None and code_editor.strip():
+                # Clear previous execution data
+                st.session_state.console_logs = []
                 st.session_state.error_logs = []
-                result = execute_python_script(st.session_state.original_data, code_editor)
+                st.session_state.processed_data = None
+                st.session_state.script_executed = False
+                
+                result = execute_python_script(st.session_state.combined_data, code_editor)
                 if result is not None:
                     st.session_state.processed_data = result
                     st.session_state.script_executed = True
-                    st.rerun()
+                st.rerun()
             else:
-                st.error("Please upload a file first")
+                if st.session_state.combined_data is None:
+                    st.error("Please upload file(s) first")
+                else:
+                    st.error("Please paste a Python script")
     
     with col2:
-        if st.button("🔄 Clear Logs", use_container_width=True):
+        if st.button("Clear Logs", use_container_width=True):
             st.session_state.console_logs = []
             st.session_state.error_logs = []
             log_to_console("Logs cleared", 'info')
@@ -472,7 +452,7 @@ output_csv = buf.getvalue()
     st.markdown("---")
     
     # Download Section
-    st.markdown("### 📥 Step 3: Download Output")
+    st.markdown('<p class="section-header">Download Output</p>', unsafe_allow_html=True)
     
     if st.session_state.processed_data is not None:
         col1, col2 = st.columns(2)
@@ -480,7 +460,7 @@ output_csv = buf.getvalue()
         with col1:
             csv_data = st.session_state.processed_data.to_csv(index=False)
             st.download_button(
-                label="📄 Download CSV",
+                label="Download CSV",
                 data=csv_data,
                 file_name=f"output_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv",
@@ -495,131 +475,68 @@ output_csv = buf.getvalue()
             excel_data = buffer.getvalue()
             
             st.download_button(
-                label="📊 Download Excel",
+                label="Download Excel",
                 data=excel_data,
                 file_name=f"output_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
         
-        st.success("✅ Output ready for download!")
+        st.success("Output ready for download!")
     else:
-        st.info("💡 Run the script to generate downloadable output")
+        st.info("Run the script to generate output")
 
 with right_col:
-    # Progress/Error Console (as requested by Mia)
-    st.markdown("### 📟 Progress & Error Console")
-    
-    tab1, tab2 = st.tabs(["📋 Execution Log", "🐛 Error Details"])
-    
-    with tab1:
-        if st.session_state.console_logs:
-            console_html = '<div class="console-box">'
-            for log in st.session_state.console_logs[-30:]:  # Show last 30 logs
-                console_html += f"{log}<br>"
-            console_html += '</div>'
-            st.markdown(console_html, unsafe_allow_html=True)
-        else:
-            st.info("📝 Execution logs will appear here. Upload a file and run a script to get started.")
-    
-    with tab2:
-        if st.session_state.error_logs:
-            error_html = '<div class="error-console-box">'
-            for error in st.session_state.error_logs[-5:]:
-                error_html += f"{error}<br><br>{'=' * 60}<br><br>"
-            error_html += '</div>'
-            st.markdown(error_html, unsafe_allow_html=True)
-        else:
-            st.success("✅ No errors detected")
-    
-    st.markdown("---")
-    
-    # Chart Section
-    st.markdown("### 📊 Data Visualization")
-    
-    if st.session_state.processed_data is not None:
-        chart = create_dynamic_chart(st.session_state.processed_data)
-        if chart:
-            st.plotly_chart(chart, use_container_width=True)
-        else:
-            st.info("📈 No numeric columns found for visualization")
-    elif st.session_state.original_data is not None:
-        st.info("📤 Run the script to visualize processed data")
+    # Tabs at the top - same size as section headers
+    if st.session_state.script_executed and st.session_state.processed_data is not None:
+        tab1, tab2, tab3 = st.tabs(["Output", "Execution Log", "Error Details"])
+        
+        with tab1:
+            st.markdown("### Output Visualization")
+            
+            # Chart
+            chart = create_dynamic_chart(st.session_state.processed_data)
+            if chart:
+                st.plotly_chart(chart, use_container_width=True)
+            else:
+                st.info("No numeric columns found for visualization")
+            
+            st.markdown("---")
+            
+            # Data Preview
+            st.markdown("### Processed Data Preview")
+            preview_rows = st.slider("Preview rows:", 5, 50, 10, key="preview_slider")
+            st.dataframe(st.session_state.processed_data.head(preview_rows), use_container_width=True)
+            
+            # Summary metrics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Rows", len(st.session_state.processed_data))
+            with col2:
+                st.metric("Total Columns", len(st.session_state.processed_data.columns))
+            with col3:
+                memory_kb = st.session_state.processed_data.memory_usage(deep=True).sum() / 1024
+                st.metric("Memory", f"{memory_kb:.1f} KB")
+        
+        with tab2:
+            if st.session_state.console_logs:
+                console_html = '<div class="console-box">'
+                for log in st.session_state.console_logs:
+                    console_html += f"{log}<br>"
+                console_html += '</div>'
+                st.markdown(console_html, unsafe_allow_html=True)
+            else:
+                st.info("No execution logs available")
+        
+        with tab3:
+            if st.session_state.error_logs:
+                error_html = '<div class="error-console-box">'
+                for error in st.session_state.error_logs:
+                    error_html += f"{error}<br><br>{'=' * 60}<br><br>"
+                error_html += '</div>'
+                st.markdown(error_html, unsafe_allow_html=True)
+            else:
+                st.success("No errors detected")
     else:
-        st.info("📤 Upload a file to see data visualization")
-    
-    st.markdown("---")
-    
-    # Data Preview
-    st.markdown("### 📋 Data Preview")
-    
-    if st.session_state.processed_data is not None:
-        st.markdown("**Processed Data Output:**")
-        preview_rows = st.slider("Preview rows:", 3, 20, 5, key="preview_slider")
-        st.dataframe(st.session_state.processed_data.head(preview_rows), use_container_width=True)
-        
-        # Data summary
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Rows", len(st.session_state.processed_data))
-        with col2:
-            st.metric("Total Columns", len(st.session_state.processed_data.columns))
-        with col3:
-            memory_kb = st.session_state.processed_data.memory_usage(deep=True).sum() / 1024
-            st.metric("Memory", f"{memory_kb:.1f} KB")
-    elif st.session_state.original_data is not None:
-        st.markdown("**Original Data (Input):**")
-        st.dataframe(st.session_state.original_data.head(5), use_container_width=True)
-    else:
-        st.info("📋 Upload a file to preview data")
-    
-    st.markdown("---")
-    
-    # Metrics Section
-    st.markdown("### 📈 Key Metrics")
-    
-    metrics = calculate_metrics(st.session_state.processed_data)
-    
-    if metrics:
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.markdown(f'<div class="metric-value">{metrics["metric1"]}</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="metric-label">{metrics["metric1_label"]}</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.markdown(f'<div class="metric-value">{metrics["metric2"]}</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="metric-label">{metrics["metric2_label"]}</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.markdown(f'<div class="metric-value">{metrics["metric3"]}</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="metric-label">{metrics["metric3_label"]}</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        with col4:
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.markdown(f'<div class="metric-value">{metrics["metric4"]}</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="metric-label">{metrics["metric4_label"]}</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-    else:
-        st.info("📊 Metrics will appear after processing data")
-
-# Footer
-st.markdown("---")
-col1, col2 = st.columns([3, 1])
-with col1:
-    st.caption("Finance Automation Platform v1.0 • Built with Streamlit")
-with col2:
-    if st.session_state.script_executed:
-        st.success("✅ Ready")
-    else:
-
-        st.info("⏳ Waiting")
-
-
-
+        # Empty state before script execution
+        st.markdown('<div class="empty-state">Upload files and run a script to see output visualization</div>', unsafe_allow_html=True)
