@@ -2,6 +2,3 @@ streamlit
 pandas
 plotly
 openpyxl
-seaborn
-matplotlib
-scikit-lear
