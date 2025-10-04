@@ -7,7 +7,6 @@ from datetime import datetime
 import numpy as np
 import traceback
 import sys
-import scikit-learn
 
 # Page configuration
 st.set_page_config(
@@ -541,6 +540,7 @@ with right_col:
     else:
         # Empty state before script execution
         st.markdown('<div class="empty-state">Upload files and run a script to see output visualization</div>', unsafe_allow_html=True)
+
 
 
 
