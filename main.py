@@ -93,7 +93,7 @@ st.markdown("""
     }
     
     [data-testid="stFileUploader"] section {
-        padding: 0;
+        padding: 12px 24px;
     }
     
     /* Remove extra padding from file uploader */
@@ -540,6 +540,7 @@ with right_col:
     else:
         # Empty state before script execution
         st.markdown('<div class="empty-state">Upload files and run a script to see output visualization</div>', unsafe_allow_html=True)
+
 
 
 
