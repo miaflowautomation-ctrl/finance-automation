@@ -89,11 +89,11 @@ st.markdown("""
     
     /* Hide file uploader drag and drop text */
     [data-testid="stFileUploader"] section div {
-    
+        display: none;
     }
     
     [data-testid="stFileUploader"] section {
-        padding: 12px 24px;
+        padding: 0;
     }
     
     /* Remove extra padding from file uploader */
@@ -136,8 +136,8 @@ def log_to_console(message, msg_type='info'):
     timestamp = datetime.now().strftime("%H:%M:%S")
     icon = {'info': 'INFO', 'success': 'SUCCESS', 'error': 'ERROR', 'warning': 'WARNING'}.get(msg_type, 'INFO')
     st.session_state.console_logs.append(f"[{timestamp}] [{icon}] {message}")
-    if len(st.session_state.console_logs) > 100:
-        st.session_state.console_logs = st.session_state.console_logs[-100:]
+    if len(st.session_state.console_logs) > 50:  # Reduced from 100
+        st.session_state.console_logs = st.session_state.console_logs[-50:]
 
 def log_error(error_msg, traceback_str=None):
     """Add error to error console"""
@@ -155,15 +155,37 @@ def process_uploaded_file(uploaded_file):
         log_to_console(f"Processing file: {uploaded_file.name}", 'info')
         
         if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
+            # Try reading CSV with different encodings
+            try:
+                df = pd.read_csv(uploaded_file, encoding='utf-8')
+            except UnicodeDecodeError:
+                uploaded_file.seek(0)  # Reset file pointer
+                df = pd.read_csv(uploaded_file, encoding='latin-1')
             log_to_console(f"CSV file loaded successfully", 'success')
         elif uploaded_file.name.endswith(('.xlsx', '.xls')):
-            df = pd.read_excel(uploaded_file)
-            log_to_console(f"Excel file loaded successfully", 'success')
+            # Try reading Excel with openpyxl engine (more robust)
+            try:
+                df = pd.read_excel(uploaded_file, engine='openpyxl')
+                log_to_console(f"Excel file loaded successfully (openpyxl)", 'success')
+            except Exception as e1:
+                log_to_console(f"Trying alternative Excel reader...", 'warning')
+                uploaded_file.seek(0)  # Reset file pointer
+                try:
+                    # Try with xlrd for older .xls files
+                    df = pd.read_excel(uploaded_file, engine='xlrd')
+                    log_to_console(f"Excel file loaded successfully (xlrd)", 'success')
+                except Exception as e2:
+                    # Last resort - try without specifying engine
+                    uploaded_file.seek(0)
+                    df = pd.read_excel(uploaded_file)
+                    log_to_console(f"Excel file loaded successfully", 'success')
         else:
             log_to_console(f"Unsupported file type: {uploaded_file.name}", 'error')
             log_error(f"Unsupported file type: {uploaded_file.name}")
             return None
+        
+        # Clean column names (strip whitespace)
+        df.columns = df.columns.str.strip()
         
         log_to_console(f"Rows: {len(df)}, Columns: {len(df.columns)}", 'info')
         log_to_console(f"Column names: {', '.join(df.columns.tolist()[:5])}{'...' if len(df.columns) > 5 else ''}", 'info')
@@ -409,13 +431,12 @@ with left_col:
     
     # Script Section
     st.markdown('<p class="section-header">Paste Python Script</p>', unsafe_allow_html=True)
-    st.caption("Available: pandas (pd), numpy (np), matplotlib (plt), seaborn (sns), sklearn")
     
     code_editor = st.text_area(
         "Python Script",
         value="",
         height=300,
-        placeholder="# Paste your Python script here\n# Available variables:\n#   - input_csv (string)\n#   - input_df (DataFrame)\n# Required output:\n#   - output_csv or output_df",
+        placeholder="# Paste your Python script here\n# Your uploaded file is already loaded - use input_df\n# Example:\n#   df = input_df.copy()\n#   # ... process df ...\n#   output_df = df  # Required!\n\n# Available variables:\n#   - input_df (DataFrame) - Your uploaded data\n#   - input_csv (string) - CSV format\n# Required output:\n#   - output_df (DataFrame) or output_csv (string)",
         help="Your script must define 'output_csv' (string) or 'output_df' (DataFrame)",
         label_visibility="collapsed"
     )
@@ -423,6 +444,7 @@ with left_col:
     col1, col2 = st.columns(2)
     with col1:
         run_disabled = st.session_state.combined_data is None or not code_editor.strip()
+        
         if st.button("Run Script", type="primary", use_container_width=True, disabled=run_disabled):
             if st.session_state.combined_data is not None and code_editor.strip():
                 # Clear previous execution data
