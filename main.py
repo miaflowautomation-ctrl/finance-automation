@@ -1,42 +1,30 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
+import matplotlib.pyplot as plt
 import io
 import csv
 from datetime import datetime
 import numpy as np
 import traceback
+import warnings
 import sys
+import base64
 
-# Page configuration
+warnings.filterwarnings('ignore')
+
 st.set_page_config(
     page_title="Finance Automation",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS styling
 st.markdown("""
 <style>
-    /* Hide Streamlit branding and icons */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
-    
-    .main-header {
-        font-size: 96px;
-        font-weight: 900;
-        color: #1f2937;
-        margin-bottom: 30px;
-        letter-spacing: -1.5px;
-    }
-    
-    /* Grey background for left panel */
-    [data-testid="column"]:first-child {
-        background-color: #f3f4f6;
-        padding: 25px;
-        border-radius: 8px;
-    }
     
     .section-header {
         font-size: 18px;
@@ -56,6 +44,7 @@ st.markdown("""
         max-height: 400px;
         overflow-y: auto;
         line-height: 1.6;
+        white-space: pre-wrap;
     }
     
     .error-console-box {
@@ -69,60 +58,24 @@ st.markdown("""
         overflow-y: auto;
         border: 1px solid #ff4444;
         line-height: 1.5;
+        white-space: pre-wrap;
     }
     
     .stDownloadButton button {
         background-color: #10b981;
         color: white;
     }
-    
-    /* Tab styling to match Upload Document size */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 2px;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        font-size: 18px;
-        font-weight: 600;
-        padding: 12px 24px;
-    }
-    
-    /* Hide file uploader drag and drop text */
-    [data-testid="stFileUploader"] section div {
-    }
-    
-    [data-testid="stFileUploader"] section {
-        padding: 12px 24px;
-    }
-    
-    /* Remove extra padding from file uploader */
-    .uploadedFile {
-        margin-top: 10px;
-    }
-    
-    /* Center empty state */
-    .empty-state {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        height: 400px;
-        color: #6b7280;
-        font-size: 16px;
-    }
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state
 if 'processed_data' not in st.session_state:
     st.session_state.processed_data = None
-if 'uploaded_files' not in st.session_state:
-    st.session_state.uploaded_files = []
+if 'captured_figures' not in st.session_state:
+    st.session_state.captured_figures = []
 if 'console_logs' not in st.session_state:
     st.session_state.console_logs = []
 if 'error_logs' not in st.session_state:
     st.session_state.error_logs = []
-if 'original_data' not in st.session_state:
-    st.session_state.original_data = None
 if 'script_executed' not in st.session_state:
     st.session_state.script_executed = False
 if 'combined_data' not in st.session_state:
@@ -131,15 +84,13 @@ if 'file_uploader_key' not in st.session_state:
     st.session_state.file_uploader_key = 0
 
 def log_to_console(message, msg_type='info'):
-    """Add messages to console log"""
     timestamp = datetime.now().strftime("%H:%M:%S")
     icon = {'info': 'INFO', 'success': 'SUCCESS', 'error': 'ERROR', 'warning': 'WARNING'}.get(msg_type, 'INFO')
     st.session_state.console_logs.append(f"[{timestamp}] [{icon}] {message}")
-    if len(st.session_state.console_logs) > 50:  # Reduced from 100
-        st.session_state.console_logs = st.session_state.console_logs[-50:]
+    if len(st.session_state.console_logs) > 100:
+        st.session_state.console_logs = st.session_state.console_logs[-100:]
 
 def log_error(error_msg, traceback_str=None):
-    """Add error to error console"""
     timestamp = datetime.now().strftime("%H:%M:%S")
     error_entry = f"[{timestamp}] ERROR: {error_msg}"
     if traceback_str:
@@ -148,64 +99,44 @@ def log_error(error_msg, traceback_str=None):
     if len(st.session_state.error_logs) > 20:
         st.session_state.error_logs = st.session_state.error_logs[-20:]
 
-def process_uploaded_file(uploaded_file):
-    """Process uploaded CSV or Excel file"""
+@st.cache_data(show_spinner=False)
+def process_uploaded_file(file_bytes, file_name):
     try:
-        log_to_console(f"Processing file: {uploaded_file.name}", 'info')
-        
-        if uploaded_file.name.endswith('.csv'):
-            # Try reading CSV with different encodings
+        if file_name.endswith('.csv'):
             try:
-                df = pd.read_csv(uploaded_file, encoding='utf-8')
+                df = pd.read_csv(io.BytesIO(file_bytes), encoding='utf-8')
             except UnicodeDecodeError:
-                uploaded_file.seek(0)  # Reset file pointer
-                df = pd.read_csv(uploaded_file, encoding='latin-1')
-            log_to_console(f"CSV file loaded successfully", 'success')
-        elif uploaded_file.name.endswith(('.xlsx', '.xls')):
-            # Try reading Excel with openpyxl engine (more robust)
+                df = pd.read_csv(io.BytesIO(file_bytes), encoding='latin-1')
+        elif file_name.endswith(('.xlsx', '.xls')):
             try:
-                df = pd.read_excel(uploaded_file, engine='openpyxl')
-                log_to_console(f"Excel file loaded successfully (openpyxl)", 'success')
-            except Exception as e1:
-                log_to_console(f"Trying alternative Excel reader...", 'warning')
-                uploaded_file.seek(0)  # Reset file pointer
+                df = pd.read_excel(io.BytesIO(file_bytes), engine='openpyxl')
+            except:
                 try:
-                    # Try with xlrd for older .xls files
-                    df = pd.read_excel(uploaded_file, engine='xlrd')
-                    log_to_console(f"Excel file loaded successfully (xlrd)", 'success')
-                except Exception as e2:
-                    # Last resort - try without specifying engine
-                    uploaded_file.seek(0)
-                    df = pd.read_excel(uploaded_file)
-                    log_to_console(f"Excel file loaded successfully", 'success')
+                    df = pd.read_excel(io.BytesIO(file_bytes), engine='xlrd')
+                except:
+                    df = pd.read_excel(io.BytesIO(file_bytes))
         else:
-            log_to_console(f"Unsupported file type: {uploaded_file.name}", 'error')
-            log_error(f"Unsupported file type: {uploaded_file.name}")
             return None
         
-        # Clean column names (strip whitespace)
         df.columns = df.columns.str.strip()
-        
-        log_to_console(f"Rows: {len(df)}, Columns: {len(df.columns)}", 'info')
-        log_to_console(f"Column names: {', '.join(df.columns.tolist()[:5])}{'...' if len(df.columns) > 5 else ''}", 'info')
         return df
     except Exception as e:
-        error_msg = f"Error processing file: {str(e)}"
-        log_to_console(error_msg, 'error')
-        log_error(error_msg, traceback.format_exc())
         return None
 
 def combine_uploaded_files(uploaded_files):
-    """Combine multiple uploaded files into one dataframe"""
     try:
         if not uploaded_files:
             return None
         
+        log_to_console(f"Processing {len(uploaded_files)} file(s)...", 'info')
         all_dfs = []
+        
         for uploaded_file in uploaded_files:
-            df = process_uploaded_file(uploaded_file)
+            file_bytes = uploaded_file.read()
+            df = process_uploaded_file(file_bytes, uploaded_file.name)
             if df is not None:
                 all_dfs.append(df)
+                log_to_console(f"Loaded: {uploaded_file.name} ({len(df)} rows)", 'success')
         
         if not all_dfs:
             return None
@@ -213,11 +144,10 @@ def combine_uploaded_files(uploaded_files):
         if len(all_dfs) == 1:
             combined_df = all_dfs[0]
         else:
-            # Concatenate all dataframes
             combined_df = pd.concat(all_dfs, ignore_index=True)
-            log_to_console(f"Combined {len(all_dfs)} files into one dataset", 'success')
+            log_to_console(f"Combined {len(all_dfs)} files", 'success')
         
-        log_to_console(f"Total rows: {len(combined_df)}, Total columns: {len(combined_df.columns)}", 'info')
+        log_to_console(f"Total: {len(combined_df)} rows, {len(combined_df.columns)} columns", 'info')
         return combined_df
     except Exception as e:
         error_msg = f"Error combining files: {str(e)}"
@@ -225,166 +155,146 @@ def combine_uploaded_files(uploaded_files):
         log_error(error_msg, traceback.format_exc())
         return None
 
+class PrintCapture:
+    def __init__(self, log_func):
+        self.log_func = log_func
+        self.original_stdout = sys.stdout
+        
+    def write(self, text):
+        if text.strip():
+            self.log_func(text.strip(), 'info')
+    
+    def flush(self):
+        pass
+
+class FigureCapture:
+    def __init__(self):
+        self.figures = []
+        self.original_plt_show = None
+    
+    def capture_matplotlib(self):
+        try:
+            fig = plt.gcf()
+            if fig.get_axes():
+                buf = io.BytesIO()
+                fig.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+                buf.seek(0)
+                img_str = base64.b64encode(buf.read()).decode()
+                self.figures.append(('matplotlib', img_str))
+                log_to_console(f"Captured matplotlib figure", 'success')
+                plt.close(fig)
+        except Exception as e:
+            log_error(f"Error capturing matplotlib figure: {str(e)}")
+    
+    def capture_plotly(self, fig):
+        try:
+            self.figures.append(('plotly', fig))
+            log_to_console(f"Captured plotly figure", 'success')
+        except Exception as e:
+            log_error(f"Error capturing plotly figure: {str(e)}")
+
 def execute_python_script(df, script):
-    """Execute Python script on dataframe with enhanced library support"""
     try:
         log_to_console("=" * 50, 'info')
         log_to_console("Starting script execution...", 'info')
+        log_to_console(f"Input data: {len(df)} rows × {len(df.columns)} columns", 'info')
         log_to_console("=" * 50, 'info')
         
-        # Convert DataFrame to CSV string for script processing
-        input_csv = df.to_csv(index=False)
-        log_to_console(f"Input data prepared: {len(df)} rows", 'info')
+        fig_capture = FigureCapture()
         
-        # Create execution environment with all necessary libraries
+        def custom_plt_show(*args, **kwargs):
+            fig_capture.capture_matplotlib()
+        
+        original_plotly_show = go.Figure.show
+        def custom_plotly_show(self, *args, **kwargs):
+            fig_capture.capture_plotly(self)
+        
         exec_globals = {
-            'input_csv': input_csv,
-            'input_df': df.copy(),  # Provide dataframe directly too
-            'io': io,
-            'csv': csv,
+            'input_df': df.copy(),
             'pd': pd,
             'np': np,
             'datetime': datetime,
+            'io': io,
+            'csv': csv,
+            'plt': plt,
+            'go': go,
+            'px': px,
+            'matplotlib': plt,
         }
         
-        # Try to import optional visualization libraries
-        try:
-            import matplotlib
-            matplotlib.use('Agg')  # Non-interactive backend
-            import matplotlib.pyplot as plt
-            exec_globals['plt'] = plt
-            exec_globals['matplotlib'] = matplotlib
-            log_to_console("Matplotlib loaded", 'info')
-        except ImportError:
-            log_to_console("Matplotlib not available", 'warning')
+        exec_locals = {}
+        
+        old_stdout = sys.stdout
+        sys.stdout = PrintCapture(log_to_console)
+        
+        original_plt_show = plt.show
+        plt.show = custom_plt_show
+        
+        go.Figure.show = custom_plotly_show
         
         try:
-            import seaborn as sns
-            exec_globals['sns'] = sns
-            log_to_console("Seaborn loaded", 'info')
-        except ImportError:
-            log_to_console("Seaborn not available", 'warning')
-        
-        try:
-            from sklearn import preprocessing, model_selection, metrics
-            exec_globals['sklearn'] = __import__('sklearn')
-            exec_globals['preprocessing'] = preprocessing
-            exec_globals['model_selection'] = model_selection
-            exec_globals['metrics'] = metrics
-            log_to_console("Scikit-learn loaded", 'info')
-        except ImportError:
-            log_to_console("Scikit-learn not available", 'warning')
-        
-        log_to_console("Executing user script...", 'info')
-        
-        # Execute the script
-        exec(script, exec_globals)
-        
-        log_to_console("Script executed without errors", 'success')
-        
-        # Get output_csv or output_df from executed script
-        if 'output_csv' in exec_globals:
-            output_csv = exec_globals['output_csv']
-            result_df = pd.read_csv(io.StringIO(output_csv))
-            log_to_console("Output retrieved via 'output_csv'", 'success')
-            log_to_console(f"Output: {len(result_df)} rows, {len(result_df.columns)} columns", 'success')
-            log_to_console("=" * 50, 'success')
-            log_to_console("EXECUTION COMPLETED SUCCESSFULLY", 'success')
-            log_to_console("=" * 50, 'success')
-            return result_df
-        elif 'output_df' in exec_globals:
-            result_df = exec_globals['output_df']
-            log_to_console("Output retrieved via 'output_df'", 'success')
-            log_to_console(f"Output: {len(result_df)} rows, {len(result_df.columns)} columns", 'success')
-            log_to_console("=" * 50, 'success')
-            log_to_console("EXECUTION COMPLETED SUCCESSFULLY", 'success')
-            log_to_console("=" * 50, 'success')
-            return result_df
-        else:
-            error_msg = "Script must set 'output_csv' or 'output_df' variable"
-            log_to_console(f"{error_msg}", 'error')
-            log_error(error_msg)
-            return None
+            exec(script, exec_globals, exec_locals)
             
-    except Exception as e:
-        error_msg = f"Script execution failed: {str(e)}"
-        log_to_console("=" * 50, 'error')
-        log_to_console(f"{error_msg}", 'error')
-        log_to_console("=" * 50, 'error')
+            if plt.get_fignums():
+                fig_capture.capture_matplotlib()
+            
+        finally:
+            sys.stdout = old_stdout
+            plt.show = original_plt_show
+            go.Figure.show = original_plotly_show
+        
+        output_df = None
+        
+        if 'output_df' in exec_locals:
+            output_df = exec_locals['output_df']
+        elif 'output_df' in exec_globals:
+            output_df = exec_globals['output_df']
+        
+        if output_df is None:
+            error_msg = "Script must define 'output_df' variable"
+            log_to_console(error_msg, 'error')
+            log_error(error_msg, "No output_df found after script execution")
+            return None, []
+        
+        if not isinstance(output_df, pd.DataFrame):
+            error_msg = f"output_df must be a DataFrame, got {type(output_df)}"
+            log_to_console(error_msg, 'error')
+            log_error(error_msg)
+            return None, []
+        
+        log_to_console("=" * 50, 'success')
+        log_to_console(f"Output generated: {len(output_df)} rows × {len(output_df.columns)} columns", 'success')
+        if fig_capture.figures:
+            log_to_console(f"Captured {len(fig_capture.figures)} visualization(s)", 'success')
+        log_to_console("=" * 50, 'success')
+        
+        return output_df, fig_capture.figures
+            
+    except SyntaxError as e:
+        error_msg = f"Syntax Error on line {e.lineno}: {str(e)}"
+        log_to_console(error_msg, 'error')
         log_error(error_msg, traceback.format_exc())
-        return None
-
-def create_dynamic_chart(df):
-    """Create interactive chart from dataframe"""
-    if df is None or len(df) == 0:
-        return None
-    
-    try:
-        # Find numeric columns
-        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-        
-        if not numeric_cols:
-            return None
-        
-        # Try to find date/time column for x-axis
-        date_cols = [col for col in df.columns if any(term in col.lower() for term in ['date', 'time', 'timestamp', 'day', 'month', 'year'])]
-        
-        if date_cols:
-            try:
-                x_data = pd.to_datetime(df[date_cols[0]], errors='coerce')
-                if x_data.isna().all():
-                    x_data = list(range(len(df)))
-                    x_label = 'Row Index'
-                else:
-                    x_label = date_cols[0]
-            except:
-                x_data = list(range(len(df)))
-                x_label = 'Row Index'
-        else:
-            x_data = list(range(len(df)))
-            x_label = 'Row Index'
-        
-        # Create figure
-        fig = go.Figure()
-        
-        # Plot up to 3 numeric columns
-        colors = ['#f59e0b', '#10b981', '#3b82f6', '#dc2626', '#6366f1']
-        plot_limit = min(len(df), 100)  # Show up to 100 points
-        
-        for idx, col in enumerate(numeric_cols[:3]):
-            fig.add_trace(go.Scatter(
-                x=x_data[:plot_limit],
-                y=df[col][:plot_limit],
-                mode='lines+markers',
-                name=col.capitalize(),
-                line=dict(color=colors[idx], width=2),
-                marker=dict(size=6)
-            ))
-        
-        fig.update_layout(
-            title=f'Output Data Visualization',
-            xaxis_title=x_label,
-            yaxis_title='Value',
-            height=400,
-            hovermode='x unified',
-            template='plotly_white',
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-        )
-        
-        return fig
+        return None, []
+    except NameError as e:
+        error_msg = f"Name Error: {str(e)}"
+        log_to_console(error_msg, 'error')
+        log_error(error_msg, traceback.format_exc())
+        return None, []
     except Exception as e:
-        log_error(f"Error creating chart: {str(e)}", traceback.format_exc())
-        return None
+        error_msg = f"Execution failed: {str(e)}"
+        log_to_console(error_msg, 'error')
+        log_error(error_msg, traceback.format_exc())
+        return None, []
+    finally:
+        sys.stdout = old_stdout
+        plt.close('all')
 
-# Main Layout
 st.title("Finance Automation")
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Create two columns
 left_col, right_col = st.columns([1, 2])
 
 with left_col:
-    # Upload Section
     st.markdown('<p class="section-header">Upload Files</p>', unsafe_allow_html=True)
     
     uploaded_files = st.file_uploader(
@@ -397,16 +307,20 @@ with left_col:
     )
     
     if uploaded_files:
+        file_names = [f.name for f in uploaded_files]
+        current_files = getattr(st.session_state, 'current_file_names', [])
+        
+        if file_names != current_files:
+            st.session_state.current_file_names = file_names
+            combined_df = combine_uploaded_files(uploaded_files)
+            if combined_df is not None:
+                st.session_state.combined_data = combined_df
+        
         st.success(f"{len(uploaded_files)} file(s) uploaded")
         for file in uploaded_files:
             st.text(f"• {file.name}")
         
-        # Process files
-        combined_df = combine_uploaded_files(uploaded_files)
-        if combined_df is not None:
-            st.session_state.combined_data = combined_df
-            st.session_state.uploaded_files = uploaded_files
-            
+        if st.session_state.combined_data is not None:
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("Total Rows", len(st.session_state.combined_data))
@@ -414,30 +328,33 @@ with left_col:
                 st.metric("Total Columns", len(st.session_state.combined_data.columns))
         
         if st.button("Remove All Files", use_container_width=True):
-            # Reset all session state
-            st.session_state.uploaded_files = []
-            st.session_state.processed_data = None
-            st.session_state.combined_data = None
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.session_state.file_uploader_key = 1
             st.session_state.console_logs = []
             st.session_state.error_logs = []
-            st.session_state.script_executed = False
-            # Increment key to force file uploader to reset
-            st.session_state.file_uploader_key += 1
-            log_to_console("All files removed and application reset", 'info')
             st.rerun()
+    else:
+        if st.session_state.combined_data is not None:
+            st.session_state.combined_data = None
+            st.session_state.processed_data = None
+            st.session_state.captured_figures = []
+            st.session_state.script_executed = False
+            st.session_state.current_file_names = []
     
     st.markdown("---")
     
-    # Script Section
-    st.markdown('<p class="section-header">Paste Python Script</p>', unsafe_allow_html=True)
+    st.markdown('<p class="section-header">Python Script</p>', unsafe_allow_html=True)
+    
+    default_script = ""
     
     code_editor = st.text_area(
         "Python Script",
-        value="",
-        height=300,
-        placeholder="# Paste your Python script here\n# Your uploaded file is already loaded - use input_df\n# Example:\n#   df = input_df.copy()\n#   # ... process df ...\n#   output_df = df  # Required!\n\n# Available variables:\n#   - input_df (DataFrame) - Your uploaded data\n#   - input_csv (string) - CSV format\n# Required output:\n#   - output_df (DataFrame) or output_csv (string)",
-        help="Your script must define 'output_csv' (string) or 'output_df' (DataFrame)",
-        label_visibility="collapsed"
+        value=default_script,
+        height=400,
+        help="Write Python code. Use plt.show() or fig.show() to display charts",
+        label_visibility="collapsed",
+        placeholder="# Write your Python code here\n# Your data is available as 'input_df'\n# Set 'output_df' to define the output"
     )
     
     col1, col2 = st.columns(2)
@@ -446,33 +363,28 @@ with left_col:
         
         if st.button("Run Script", type="primary", use_container_width=True, disabled=run_disabled):
             if st.session_state.combined_data is not None and code_editor.strip():
-                # Clear previous execution data
                 st.session_state.console_logs = []
                 st.session_state.error_logs = []
                 st.session_state.processed_data = None
+                st.session_state.captured_figures = []
                 st.session_state.script_executed = False
                 
-                result = execute_python_script(st.session_state.combined_data, code_editor)
-                if result is not None:
-                    st.session_state.processed_data = result
-                    st.session_state.script_executed = True
+                with st.spinner('Executing...'):
+                    result, figures = execute_python_script(st.session_state.combined_data, code_editor)
+                    if result is not None:
+                        st.session_state.processed_data = result
+                        st.session_state.captured_figures = figures
+                        st.session_state.script_executed = True
                 st.rerun()
-            else:
-                if st.session_state.combined_data is None:
-                    st.error("Please upload file(s) first")
-                else:
-                    st.error("Please paste a Python script")
     
     with col2:
         if st.button("Clear Logs", use_container_width=True):
             st.session_state.console_logs = []
             st.session_state.error_logs = []
-            log_to_console("Logs cleared", 'info')
             st.rerun()
     
     st.markdown("---")
     
-    # Download Section
     st.markdown('<p class="section-header">Download Output</p>', unsafe_allow_html=True)
     
     if st.session_state.processed_data is not None:
@@ -489,7 +401,6 @@ with left_col:
             )
         
         with col2:
-            # Create Excel file
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 st.session_state.processed_data.to_excel(writer, index=False, sheet_name='Output')
@@ -503,33 +414,40 @@ with left_col:
                 use_container_width=True
             )
         
-        st.success("Output ready for download!")
+        st.success("Output ready!")
     else:
-        st.info("Run the script to generate output")
+        st.info("Run script to generate output")
 
 with right_col:
-    # Tabs at the top - same size as section headers
     if st.session_state.script_executed and st.session_state.processed_data is not None:
         tab1, tab2, tab3 = st.tabs(["Output", "Execution Log", "Error Details"])
         
         with tab1:
-            st.markdown("### Output Visualization")
-            
-            # Chart
-            chart = create_dynamic_chart(st.session_state.processed_data)
-            if chart:
-                st.plotly_chart(chart, use_container_width=True)
+            if st.session_state.captured_figures:
+                st.markdown("### Visualizations")
+                st.markdown(f"*{len(st.session_state.captured_figures)} chart(s) generated*")
+                st.markdown("")
+                
+                for idx, (fig_type, fig_data) in enumerate(st.session_state.captured_figures):
+                    if fig_type == 'matplotlib':
+                        st.image(f"data:image/png;base64,{fig_data}", use_container_width=True)
+                    elif fig_type == 'plotly':
+                        st.plotly_chart(fig_data, use_container_width=True)
+                    
+                    if idx < len(st.session_state.captured_figures) - 1:
+                        st.markdown("<br>", unsafe_allow_html=True)
+                
+                st.markdown("---")
+                st.markdown("")
             else:
-                st.info("No numeric columns found for visualization")
+                st.info("No visualizations. Add plt.show() or fig.show() to your script.")
+                st.markdown("---")
             
-            st.markdown("---")
-            
-            # Data Preview
-            st.markdown("### Processed Data Preview")
+            st.markdown("### Data Preview")
             preview_rows = st.slider("Preview rows:", 5, 50, 10, key="preview_slider")
             st.dataframe(st.session_state.processed_data.head(preview_rows), use_container_width=True)
             
-            # Summary metrics
+            st.markdown("")
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Total Rows", len(st.session_state.processed_data))
@@ -542,8 +460,7 @@ with right_col:
         with tab2:
             if st.session_state.console_logs:
                 console_html = '<div class="console-box">'
-                for log in st.session_state.console_logs:
-                    console_html += f"{log}<br>"
+                console_html += '\n'.join(st.session_state.console_logs)
                 console_html += '</div>'
                 st.markdown(console_html, unsafe_allow_html=True)
             else:
@@ -552,19 +469,10 @@ with right_col:
         with tab3:
             if st.session_state.error_logs:
                 error_html = '<div class="error-console-box">'
-                for error in st.session_state.error_logs:
-                    error_html += f"{error}<br><br>{'=' * 60}<br><br>"
+                error_html += '\n\n'.join(st.session_state.error_logs)
                 error_html += '</div>'
                 st.markdown(error_html, unsafe_allow_html=True)
             else:
                 st.success("No errors detected")
     else:
-        # Empty state before script execution
-        st.markdown('<div class="empty-state">Upload files and run a script to see output visualization</div>', unsafe_allow_html=True)
-
-
-
-
-
-
-
+        st.markdown('<div style="display: flex; align-items: center; justify-content: center; height: 400px; color: #6b7280; font-size: 16px;">Upload files and run script to see output</div>', unsafe_allow_html=True)
