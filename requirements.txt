@@ -1,8 +1,11 @@
-streamlit
-pandas
-plotly
-openpyxl
-numpy
-matplotlib
+streamlit>=1.28.0
+pandas>=2.0.0
+plotly>=5.17.0
+openpyxl>=3.1.0
+numpy>=1.24.0
+matplotlib>=3.7.0
 seaborn
 scikit-learn
+xlrd>=2.0.1
+Pillow>=10.0.0
+kaleido>=0.2.1
