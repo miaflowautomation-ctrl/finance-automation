@@ -685,5 +685,5 @@ with right_col:
                     st.markdown(error_html, unsafe_allow_html=True)
                 else:
                     st.success("No errors detected")
-else:
+                else:
         st.markdown('<div style="display: flex; align-items: center; justify-content: center; height: 400px; color: #6b7280; font-size: 16px;">Upload files to get started</div>', unsafe_allow_html=True)
